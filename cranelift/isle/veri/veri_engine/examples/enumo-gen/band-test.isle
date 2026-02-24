@@ -1,0 +1,50 @@
+;; === Primitive types ===
+(type Value (primitive Value))
+(type Type (primitive Type))
+(type Inst (primitive Inst))
+(type InstOutput (primitive InstOutput))
+(type MInst (enum))
+
+;; === Root lowering term ===
+(spec (lower arg) (provide (= result arg)))
+(decl partial lower (Inst) InstOutput)
+
+;; === Type wrappers ===
+
+(decl first_result (Value) Inst)
+(extern extractor first_result first_result)
+
+(spec (value_type arg) (provide (= arg (widthof result))))
+(decl value_type (Type) Value)
+(extern extractor infallible value_type value_type)
+
+;; Extract the type of the instruction's first result.
+(decl result_type (Type) Inst)
+(extractor (result_type ty)
+           (first_result (value_type ty)))
+
+
+(spec (has_type ty arg) (provide (= result arg)) (require (= ty (widthof arg))))
+(decl has_type (Type Inst) Inst)
+(extractor (has_type ty inst) (and (result_type ty) inst))
+
+(spec (fits_in_32 arg) (provide (= result arg)) (require (<= arg 32)))
+(decl fits_in_32 (Type) Type)
+(extern extractor fits_in_32 fits_in_32)
+
+;; === Operator specs and decls ===
+(spec (band a b) (provide (= result (bvand a b))))
+(decl band (Value Value) Inst)
+(extern constructor band band)
+(extern extractor band band)
+
+(spec (x64_and_i32 a b) (provide (= result (bvand a b))))
+(decl x64_and_i32 (Value Value) InstOutput)
+(extern constructor x64_and_i32 x64_and_i32)
+
+;; === Type instantiation ===
+(form bv_form ((args (bv 32) (bv 32)) (ret (bv 32)) (canon (bv 32))))
+(instantiate band bv_form)
+
+;; === The rule under verification ===
+(rule verify_rule (lower (has_type (fits_in_32 ty) (band a b))) (x64_and_i32 a b))
