@@ -1,0 +1,83 @@
+;; === Primitive types ===
+(type Value (primitive Value))
+(type Type (primitive Type))
+(type Inst (primitive Inst))
+(type InstOutput (primitive InstOutput))
+(type MInst (enum))
+(type Imm64 (primitive Imm64))
+
+;; === Root lowering term ===
+(spec (simplify x) (provide (= x result)))
+(instantiate simplify
+    ((args (bv 8)) (ret (bv 8)) (canon (bv 8)))
+    ((args (bv 16)) (ret (bv 16)) (canon (bv 16)))
+    ((args (bv 32)) (ret (bv 32)) (canon (bv 32)))
+    ((args (bv 64)) (ret (bv 64)) (canon (bv 64)))
+)
+(decl simplify (Value) Value)
+
+
+;; === Type wrappers ===
+
+(decl first_result (Value) Inst)
+(extern extractor first_result first_result)
+
+(spec (value_type arg) (provide (= arg (widthof result))))
+(decl value_type (Type) Value)
+(extern extractor infallible value_type value_type)
+
+;; Extract the type of the instruction's first result.
+(decl result_type (Type) Inst)
+(extractor (result_type ty)
+           (first_result (value_type ty)))
+
+
+(spec (has_type ty arg) (provide (= result arg)) (require (= ty (widthof arg))))
+(decl has_type (Type Inst) Inst)
+(extractor (has_type ty inst) (and (result_type ty) inst))
+
+(spec (fits_in_32 arg) (provide (= result arg)) (require (<= arg 32)))
+(decl fits_in_32 (Type) Type)
+(extern extractor fits_in_32 fits_in_32)
+
+;; === Integer constant terms ===
+(spec (iconst ty arg)
+    (provide (= arg (zero_ext 64 result)))
+    (require (= ty (widthof arg))))
+(decl iconst (Type Imm64) Value)
+(extern constructor iconst iconst)
+(extern extractor iconst iconst)
+
+
+;; === Operator specs and decls ===
+(spec (x64_and_i32 a b) (provide (= result (bvand a b))))
+(decl x64_and_i32 (Value Value) Value)
+(extern constructor x64_and_i32 x64_and_i32)
+
+(spec (iadd ty x y)
+    (provide (= (bvadd x y) result))
+    (require
+        (= ty (widthof x))
+        (= ty (widthof y))))
+(decl iadd (Type Value Value) Value)
+(extern extractor iadd iadd)
+(extern constructor iadd iadd)
+
+
+(; (spec (x64_not_i32 a) (provide (= result (bvnot a))))
+(decl x64_not_i32 (Value) InstOutput)
+(extern constructor x64_not_i32 x64_not_i32) ;)
+
+(spec (x64_not_i32 a) (provide (= result (bvnot a))))
+(decl x64_not_i32 (Value) Value)
+(extern constructor x64_not_i32 x64_not_i32)
+
+;; === Type instantiation ===
+(form bv_unary_form ((args (bv 32)) (ret (bv 32)) (canon (bv 32))))
+(form bv_binary_form ((args (bv 32) (bv 32)) (ret (bv 32)) (canon (bv 32))))
+(form bv_ternary_form ((args (bv 32) (bv 32) (bv 32)) (ret (bv 32)) (canon (bv 32))))
+(instantiate iadd bv_binary_form)
+
+;; === The rule under verification ===
+(rule verify_rule (simplify (iadd ty a (iconst ty 0)))
+      (x64_and_i32 a (x64_not_i32 (iconst ty 0))))
